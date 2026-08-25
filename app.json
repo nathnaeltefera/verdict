@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "Verdict",
+    "slug": "verdict",
+    "scheme": "verdict",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FBF7F2"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.verdict.billsplit",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Verdict uses the camera to photograph a receipt so it can read the line items.",
+        "NSPhotoLibraryUsageDescription": "Verdict reads receipt photos you pick from your library."
+      }
+    },
+    "android": {
+      "package": "com.verdict.billsplit",
+      "adaptiveIcon": {
+        "backgroundColor": "#FBF7F2",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Verdict reads receipt photos you pick from your library.",
+          "cameraPermission": "Verdict uses the camera to photograph a receipt so it can read the line items."
+        }
+      ]
+    ],
+    "extra": {
+      "supabaseUrl": "",
+      "supabaseAnonKey": "",
+      "webBaseUrl": ""
+    }
+  }
+}

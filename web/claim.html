@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Your share of the bill</title>
+<meta name="color-scheme" content="light dark">
+<style>
+  :root {
+    --bg: #FBF7F2; --surface: #FFFFFF; --surface-alt: #F3EDE5;
+    --line: #E7DED2; --text: #1F1B16; --soft: #6F655A; --faint: #9C9084;
+    --accent: #C2410C; --good: #15803D; --good-soft: #E8F6EC;
+    --warn: #B45309; --warn-soft: #FEF3E2;
+  }
+  :root:not([data-theme="light"]) { }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17140F; --surface: #211D17; --surface-alt: #2A251E;
+      --line: #3A3329; --text: #F4EEE5; --soft: #B3A896; --faint: #877C6C;
+      --accent: #F97316; --good: #4ADE80; --good-soft: #17301F;
+      --warn: #FBBF24; --warn-soft: #322612;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 500 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    padding: 24px 16px calc(40px + env(safe-area-inset-bottom));
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin: 0; }
+  .sub { color: var(--soft); font-size: 14px; margin-top: 4px; }
+  .label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.7px;
+    text-transform: uppercase; color: var(--faint); margin: 28px 0 10px;
+  }
+  .card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 20px; padding: 18px; margin-bottom: 12px;
+  }
+  .person { cursor: pointer; }
+  .person > summary {
+    list-style: none; display: flex; align-items: center; gap: 12px;
+  }
+  .person > summary::-webkit-details-marker { display: none; }
+  .avatar {
+    width: 42px; height: 42px; border-radius: 999px; flex: 0 0 auto;
+    display: grid; place-items: center;
+    color: #fff; font-weight: 800; font-size: 15px;
+  }
+  .name { flex: 1; font-weight: 700; font-size: 17px; min-width: 0;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .amount { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 19px; }
+  .paid .name, .paid .amount { color: var(--faint); }
+  .paid .amount { text-decoration: line-through; }
+  .rows { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .row { display: flex; gap: 12px; align-items: baseline; padding: 5px 0; }
+  .row .k { flex: 1; color: var(--soft); font-size: 14px; }
+  .row .k small { display: block; color: var(--faint); font-size: 12px; }
+  .row .v { font-variant-numeric: tabular-nums; font-size: 14px; font-weight: 600; }
+  .row.total { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 10px; }
+  .row.total .k, .row.total .v { color: var(--text); font-weight: 800; font-size: 16px; }
+  .pill {
+    display: inline-block; border-radius: 999px; padding: 4px 10px;
+    font-size: 12px; font-weight: 700;
+    background: var(--good-soft); color: var(--good);
+  }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .hint { color: var(--faint); font-size: 13px; text-align: center; margin-top: 24px; line-height: 1.6; }
+  .empty { text-align: center; padding: 60px 20px; color: var(--soft); }
+  .empty .big { font-size: 44px; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+
+<script>
+// The split arrives in the URL fragment. Fragments are never sent to the server,
+// so hosting this file anywhere static keeps the bill between you and whoever
+// you sent the link to.
+(function () {
+  var PERSON_COLORS = ['#E4572E','#2E86AB','#7B5EA7','#0F8A6B','#D4A017','#C2185B','#3F6C51','#5B6ABF','#B85C38','#00838F'];
+  var app = document.getElementById('app');
+
+  function el(tag, attrs, children) {
+    var node = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'class') node.className = attrs[k];
+      else if (k === 'style') node.setAttribute('style', attrs[k]);
+      else node.setAttribute(k, attrs[k]);
+    });
+    (children || []).forEach(function (child) {
+      node.appendChild(typeof child === 'string' ? document.createTextNode(child) : child);
+    });
+    return node;
+  }
+
+  function decode(fragment) {
+    var b64 = fragment.replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    var binary = atob(b64);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
+  function money(minor, symbol) {
+    var negative = minor < 0, abs = Math.abs(minor);
+    var whole = String(Math.floor(abs / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    var frac = String(abs % 100).padStart(2, '0');
+    return (negative ? '-' : '') + symbol + ' ' + whole + '.' + frac;
+  }
+
+  function rate(fraction) {
+    var pct = fraction * 100;
+    return (Math.abs(pct - Math.round(pct)) < 1e-9 ? Math.round(pct) : Math.round(pct * 100) / 100) + '%';
+  }
+
+  function initials(name) {
+    var parts = String(name).trim().split(/\s+/).filter(Boolean);
+    if (!parts.length) return '?';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
+
+  function row(key, value, hint, cls) {
+    var k = el('div', { class: 'k' }, [key]);
+    if (hint) k.appendChild(el('small', {}, [hint]));
+    return el('div', { class: 'row' + (cls ? ' ' + cls : '') }, [k, el('div', { class: 'v' }, [value])]);
+  }
+
+  function renderPerson(person, data) {
+    var color = PERSON_COLORS[person.c % PERSON_COLORS.length];
+    var card = el('details', { class: 'card person' + (person.paid ? ' paid' : '') });
+
+    var summary = el('summary', {}, [
+      el('div', { class: 'avatar', style: 'background:' + color }, [initials(person.n)]),
+      el('div', { class: 'name' }, [person.n]),
+      el('div', { class: 'amount', style: person.paid ? '' : 'color:' + color }, [money(person.t, data.c)]),
+    ]);
+    card.appendChild(summary);
+
+    var rows = el('div', { class: 'rows' });
+    person.l.forEach(function (line) {
+      var notes = [];
+      if (line.w > 1) notes.push('shared ' + line.w + ' ways');
+      if (line.x) notes.push('no VAT on this one');
+      rows.appendChild(row(line.d, money(line.a, data.c), notes.length ? notes.join(' · ') : null));
+    });
+    if (person.sc > 0 && data.s) rows.appendChild(row(data.s[0], money(person.sc, data.c)));
+    rows.appendChild(row('VAT ' + rate(data.tr), money(person.tx, data.c),
+      person.tx === 0 ? 'nothing taxable ordered' : null));
+    if (person.tp > 0) rows.appendChild(row('Tip', money(person.tp, data.c)));
+    rows.appendChild(row('Owes', money(person.t, data.c), null, 'total'));
+    if (person.paid) rows.appendChild(el('div', { style: 'margin-top:10px' }, [el('span', { class: 'pill' }, ['✓ Settled up'])]));
+    card.appendChild(rows);
+    return card;
+  }
+
+  function render(data) {
+    app.appendChild(el('h1', {}, [data.m]));
+    if (data.d) app.appendChild(el('div', { class: 'sub' }, [data.d]));
+
+    app.appendChild(el('div', { class: 'label' }, ['What everyone owes']));
+    data.p.forEach(function (person) { app.appendChild(renderPerson(person, data)); });
+
+    if (data.u) {
+      var warn = el('div', { class: 'card' });
+      warn.appendChild(el('div', { style: 'margin-bottom:10px' }, [
+        el('span', { class: 'pill warn' }, [money(data.u.t, data.c) + ' unclaimed']),
+      ]));
+      data.u.l.forEach(function (line) { warn.appendChild(row(line.d, money(line.a, data.c))); });
+      app.appendChild(warn);
+    }
+
+    app.appendChild(el('div', { class: 'label' }, ['The bill']));
+    var bill = el('div', { class: 'card' });
+    if (data.s) bill.appendChild(row(data.s[0], money(data.s[1], data.c)));
+    else bill.appendChild(row('Service charge', 'None'));
+    bill.appendChild(row('VAT ' + rate(data.tr), money(data.tt, data.c)));
+    if (data.tip > 0) bill.appendChild(row('Tip', money(data.tip, data.c)));
+    bill.appendChild(row('Grand total', money(data.g, data.c), null, 'total'));
+    app.appendChild(bill);
+
+    app.appendChild(el('div', { class: 'hint' }, [
+      'Tap your name for the line-by-line breakdown. Nothing here is stored on a server — the whole split travels inside this link.',
+    ]));
+
+    document.title = data.m + ' — ' + money(data.g, data.c);
+  }
+
+  function renderEmpty(title, body) {
+    app.appendChild(el('div', { class: 'empty' }, [
+      el('div', { class: 'big' }, ['🧾']),
+      el('h1', { style: 'margin-top:12px' }, [title]),
+      el('div', { class: 'sub' }, [body]),
+    ]));
+  }
+
+  var fragment = location.hash.replace(/^#/, '');
+  if (!fragment) {
+    renderEmpty('Nothing to show', 'Open the link someone shared with you — the split travels inside it.');
+    return;
+  }
+  try {
+    var data = decode(fragment);
+    if (!data || data.v !== 1 || !Array.isArray(data.p)) throw new Error('bad payload');
+    render(data);
+  } catch (err) {
+    renderEmpty('That link looks broken', 'Ask whoever sent it to share it again — it may have been cut short.');
+  }
+})();
+</script>
+</body>
+</html>
