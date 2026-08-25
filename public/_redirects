@@ -1,0 +1,3 @@
+# Netlify: serve real files first, otherwise hand the URL to the app so
+# client-side routing can resolve dynamic paths like /bill/<id>/assign.
+/*  /index.html  200

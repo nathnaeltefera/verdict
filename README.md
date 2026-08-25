@@ -151,17 +151,34 @@ the rate out — that is the app's job, and the app can show its working.
 
 ---
 
-## Poking at it without a phone
+## On your phone without Xcode: install the web build
+
+The web build is a real installable app on iOS — an icon on the home screen, no
+Safari chrome, bills stored on the device. Good enough for a meal out; the
+native build is still better (haptics, no server needed).
+
+Locally, over your Wi-Fi:
 
 ```bash
-npm install
 npx expo start --web
 ```
 
-Runs the whole app in a browser via react-native-web — every screen, the sample
-receipts, assignment, the split. Useful while Xcode downloads. The share sheet
-falls back to copying, since browsers without `navigator.share` have nothing to
-open.
+Open `http://<your-mac's-ip>:8081` in Safari on the iPhone, then Share →
+**Add to Home Screen**. Needs the Mac awake and on the same network.
+
+Permanently, so it works anywhere:
+
+```bash
+npm run build:web        # writes ./dist
+```
+
+Drop `dist/` on Netlify or Vercel, open the URL in Safari, Add to Home Screen.
+`public/_redirects` and `vercel.json` are already set up so that dynamic routes
+like `/bill/<id>/assign` survive a reload — on a host with no rewrite support
+(GitHub Pages) they will 404 when reloaded mid-bill.
+
+Bills live in the browser's local storage, which is per-device and not shared
+with the native app.
 
 ## Layout
 
