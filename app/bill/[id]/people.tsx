@@ -1,25 +1,25 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useBills } from '../../../src/data/store';
 import { Avatar } from '../../../src/ui/components/Avatar';
-import { AppButton, Card, EmptyState, SectionLabel } from '../../../src/ui/components/base';
-import { palette, radius, space, type as typo } from '../../../src/ui/theme';
+import { AppButton, Card, EmptyState, Input, SectionLabel } from '../../../src/ui/components/base';
+import { Centered, Screen } from '../../../src/ui/components/Screen';
+import { Stagger } from '../../../src/ui/components/Stagger';
+import { hairline, palette, radius, space, type as typo } from '../../../src/ui/theme';
 
 export default function People() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { getBill, addPerson, removePerson, roster } = useBills();
   const [name, setName] = useState('');
   const bill = getBill(String(id));
 
   if (!bill) {
     return (
-      <View style={styles.centered}>
+      <Centered>
         <Text style={[typo.body, { color: palette.textSoft }]}>That bill is no longer here.</Text>
-      </View>
+      </Centered>
     );
   }
 
@@ -33,20 +33,28 @@ export default function People() {
   const suggestions = roster.filter((p) => !atTable.has(p.name.toLowerCase())).slice(0, 12);
 
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 110 }]} keyboardShouldPersistTaps="handled">
+    <Screen
+      keyboardAware
+      dock={
+        <AppButton
+          label={bill.people.length ? 'Next — who had what' : 'Add someone to continue'}
+          disabled={bill.people.length === 0}
+          onPress={() => router.push(`/bill/${bill.id}/assign`)}
+        />
+      }
+    >
+      <Stagger>
         <Card>
           <SectionLabel>Add everyone at the table</SectionLabel>
           <View style={styles.inputRow}>
-            <TextInput
+            <Input
               value={name}
               onChangeText={setName}
               onSubmitEditing={submit}
               placeholder="Name"
-              placeholderTextColor={palette.textFaint}
               autoCapitalize="words"
               returnKeyType="done"
-              style={[typo.body, styles.input]}
+              style={{ flex: 1 }}
             />
             <Pressable
               onPress={submit}
@@ -64,7 +72,13 @@ export default function People() {
               <SectionLabel style={{ marginTop: space.lg }}>People you’ve split with before</SectionLabel>
               <View style={styles.suggestions}>
                 {suggestions.map((person) => (
-                  <Pressable key={person.id} onPress={() => addPerson(bill.id, person.name)} style={styles.suggestion}>
+                  <Pressable
+                    key={person.id}
+                    onPress={() => addPerson(bill.id, person.name)}
+                    style={styles.suggestion}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add ${person.name}`}
+                  >
                     <Avatar person={person} size={22} />
                     <Text style={[typo.small, { color: palette.text }]}>{person.name}</Text>
                   </Pressable>
@@ -76,7 +90,6 @@ export default function People() {
 
         {bill.people.length === 0 ? (
           <EmptyState
-            emoji="👋"
             title="Nobody yet"
             body="Add yourself first, then everyone else who ate. You can always add someone later."
           />
@@ -102,32 +115,13 @@ export default function People() {
             </Card>
           </View>
         )}
-      </ScrollView>
-
-      <View style={[styles.dock, { paddingBottom: insets.bottom + space.md }]}>
-        <AppButton
-          label={bill.people.length ? 'Next — who had what' : 'Add someone to continue'}
-          disabled={bill.people.length === 0}
-          onPress={() => router.push(`/bill/${bill.id}/assign`)}
-        />
-      </View>
-    </View>
+      </Stagger>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: palette.bg },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: space.lg, gap: space.lg },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
-  input: {
-    flex: 1,
-    color: palette.text,
-    backgroundColor: palette.surfaceAlt,
-    borderRadius: radius.md,
-    paddingHorizontal: space.md,
-    paddingVertical: 13,
-  },
   add: {
     width: 48,
     height: 48,
@@ -136,7 +130,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  addText: { color: '#FFFFFF', fontSize: 26, fontWeight: '700', lineHeight: 30 },
+  addText: { color: palette.onAccent, fontSize: 26, fontWeight: '700', lineHeight: 30 },
   suggestions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   suggestion: {
     flexDirection: 'row',
@@ -150,16 +144,5 @@ const styles = StyleSheet.create({
     borderColor: palette.line,
   },
   person: { flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md },
-  personDivider: { borderTopWidth: 1, borderTopColor: palette.line },
-  dock: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: space.lg,
-    paddingTop: space.md,
-    backgroundColor: palette.bg,
-    borderTopWidth: 1,
-    borderTopColor: palette.line,
-  },
+  personDivider: { borderTopWidth: hairline, borderTopColor: palette.line },
 });

@@ -44,7 +44,15 @@ export default function Root({ children }: { children: React.ReactNode }) {
 
 const shell = `
   html, body { height: 100%; background-color: #FBF7F2; }
-  body { overflow: hidden; overscroll-behavior-y: none; }
+  body {
+    overflow: hidden;
+    overscroll-behavior-y: none;
+    /* Faint paper grain behind everything — the app's cards sit on top of it. */
+    background-image: radial-gradient(rgba(59, 42, 22, 0.035) 1px, transparent 1px);
+    background-size: 4px 4px;
+    /* Never synthesize a fake bold/italic when a Google-font weight is missing. */
+    font-synthesis: none;
+  }
   #root { display: flex; height: 100%; flex: 1; }
   /* Stop the double-tap-to-zoom and text-selection wobble that make a web page
      feel like a web page rather than an app. */

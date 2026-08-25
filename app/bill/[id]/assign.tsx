@@ -7,7 +7,10 @@ import { previewLineSplit, splitBill } from '../../../src/core/split';
 import { useBills } from '../../../src/data/store';
 import { ClaimChip } from '../../../src/ui/components/Avatar';
 import { AppButton, Card, Pill, Progress, SectionLabel } from '../../../src/ui/components/base';
-import { palette, personColor, radius, space, type as typo } from '../../../src/ui/theme';
+import { Dock, DOCK_ALLOWANCE } from '../../../src/ui/components/Dock';
+import { Centered } from '../../../src/ui/components/Screen';
+import { Stagger } from '../../../src/ui/components/Stagger';
+import { hairline, palette, personColor, radius, space, tones, type as typo } from '../../../src/ui/theme';
 import type { Bill, LineItem } from '../../../src/core/types';
 
 /** "Nobody yet" / "Just Sara" / "Shared 3 ways · Br 126.30 each". */
@@ -54,12 +57,12 @@ function ItemCard({ bill, item, symbol }: { bill: Bill; item: LineItem; symbol: 
       <View style={styles.itemHead}>
         <View style={{ flex: 1 }}>
           <Text style={[typo.heading, { color: palette.text }]}>{item.description}</Text>
-          <Text style={[typo.small, { color: palette.textFaint, marginTop: 3 }]}>
+          <Text style={[typo.small, typo.mono, { fontSize: 12, color: palette.textFaint, marginTop: 3 }]}>
             {item.qty > 1 ? `${item.qty} × ${formatMoney(item.unitPrice, symbol)}` : 'Qty 1'}
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end', gap: 6 }}>
-          <Text style={[typo.title, typo.mono, { color: palette.text }]}>{formatMoney(item.amount, symbol)}</Text>
+          <Text style={[typo.monoBold, { fontSize: 18, color: palette.text }]}>{formatMoney(item.amount, symbol)}</Text>
           {!item.taxable ? <Pill label="No VAT" tone="neutral" /> : null}
         </View>
       </View>
@@ -82,16 +85,22 @@ function ItemCard({ bill, item, symbol }: { bill: Bill; item: LineItem; symbol: 
                   onPress={() => setShare(bill.id, item.id, person.id, Math.max(1, (claims[person.id] ?? 1) - 1))}
                   hitSlop={8}
                   style={styles.stepButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Fewer shares for ${person.name}`}
                 >
                   <Text style={styles.stepText}>−</Text>
                 </Pressable>
-                <Text style={[typo.small, { color: personColor(person.colorIndex), minWidth: 20, textAlign: 'center' }]}>
+                <Text
+                  style={[typo.monoBold, { fontSize: 13, color: personColor(person.colorIndex), minWidth: 20, textAlign: 'center' }]}
+                >
                   {claims[person.id]}
                 </Text>
                 <Pressable
                   onPress={() => setShare(bill.id, item.id, person.id, (claims[person.id] ?? 1) + 1)}
                   hitSlop={8}
                   style={styles.stepButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={`More shares for ${person.name}`}
                 >
                   <Text style={styles.stepText}>+</Text>
                 </Pressable>
@@ -102,17 +111,17 @@ function ItemCard({ bill, item, symbol }: { bill: Bill; item: LineItem; symbol: 
       </ScrollView>
 
       <View style={styles.itemActions}>
-        <Pressable onPress={() => claimForEveryone(bill.id, item.id)} hitSlop={6}>
+        <Pressable onPress={() => claimForEveryone(bill.id, item.id)} hitSlop={6} accessibilityRole="button">
           <Text style={[typo.small, { color: palette.accent }]}>Everyone</Text>
         </Pressable>
         {claimedCount > 1 ? (
-          <Pressable onPress={() => setShowShares((v) => !v)} hitSlop={6}>
+          <Pressable onPress={() => setShowShares((v) => !v)} hitSlop={6} accessibilityRole="button">
             <Text style={[typo.small, { color: palette.accent }]}>{showShares ? 'Done' : 'Uneven shares'}</Text>
           </Pressable>
         ) : null}
         <View style={{ flex: 1 }} />
         {claimedCount > 0 ? (
-          <Pressable onPress={() => clearClaims(bill.id, item.id)} hitSlop={6}>
+          <Pressable onPress={() => clearClaims(bill.id, item.id)} hitSlop={6} accessibilityRole="button">
             <Text style={[typo.small, { color: palette.textFaint }]}>Clear</Text>
           </Pressable>
         ) : null}
@@ -132,9 +141,9 @@ export default function Assign() {
 
   if (!bill || !result) {
     return (
-      <View style={styles.centered}>
+      <Centered>
         <Text style={[typo.body, { color: palette.textSoft }]}>That bill is no longer here.</Text>
-      </View>
+      </Centered>
     );
   }
 
@@ -153,48 +162,49 @@ export default function Assign() {
           }
         />
         <View style={styles.headerActions}>
-          <Pressable onPress={() => splitEverythingEvenly(bill.id)} hitSlop={6}>
+          <Pressable onPress={() => splitEverythingEvenly(bill.id)} hitSlop={6} accessibilityRole="button">
             <Text style={[typo.small, { color: palette.accent }]}>Split everything evenly</Text>
           </Pressable>
           <View style={{ flex: 1 }} />
-          <Pressable onPress={() => router.push(`/bill/${bill.id}/people`)} hitSlop={6}>
+          <Pressable onPress={() => router.navigate(`/bill/${bill.id}/people`)} hitSlop={6} accessibilityRole="button">
             <Text style={[typo.small, { color: palette.accent }]}>Edit people</Text>
           </Pressable>
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 110 }]}>
-        <SectionLabel>Tap a face to put them on a dish. Tap two or more to share it.</SectionLabel>
-        {bill.receipt.items.map((item) => (
-          <ItemCard key={item.id} bill={bill} item={item} symbol={symbol} />
-        ))}
+      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + DOCK_ALLOWANCE }]}>
+        <Stagger>
+          <SectionLabel>Tap a face to put them on a dish. Tap two or more to share it.</SectionLabel>
+          {bill.receipt.items.map((item) => (
+            <ItemCard key={item.id} bill={bill} item={item} symbol={symbol} />
+          ))}
+        </Stagger>
       </ScrollView>
 
-      <View style={[styles.dock, { paddingBottom: insets.bottom + space.md }]}>
+      <Dock>
         <AppButton
           label={remaining === 0 ? 'See what everyone owes' : `See totals (${remaining} unclaimed)`}
           onPress={() => router.push(`/bill/${bill.id}/summary`)}
         />
-      </View>
+      </Dock>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: palette.bg },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   header: {
     paddingHorizontal: space.lg,
     paddingTop: space.sm,
     paddingBottom: space.md,
     backgroundColor: palette.bg,
-    borderBottomWidth: 1,
+    borderBottomWidth: hairline,
     borderBottomColor: palette.line,
   },
   headerActions: { flexDirection: 'row', alignItems: 'center', marginTop: space.md },
   content: { padding: space.lg, gap: space.md },
   itemCard: { gap: space.sm, padding: space.lg },
-  itemCardUnclaimed: { borderColor: '#F0D7A8', backgroundColor: palette.warnSoft },
+  itemCardUnclaimed: { borderColor: tones.warn.line, backgroundColor: palette.warnSoft },
   itemHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space.md },
   chipRow: { gap: space.xs, paddingVertical: space.xs, paddingRight: space.lg },
   stepper: {
@@ -210,15 +220,4 @@ const styles = StyleSheet.create({
   stepButton: { width: 22, height: 22, alignItems: 'center', justifyContent: 'center' },
   stepText: { fontSize: 16, fontWeight: '800', color: palette.textSoft, lineHeight: 18 },
   itemActions: { flexDirection: 'row', alignItems: 'center', gap: space.lg, marginTop: 2 },
-  dock: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: space.lg,
-    paddingTop: space.md,
-    backgroundColor: palette.bg,
-    borderTopWidth: 1,
-    borderTopColor: palette.line,
-  },
 });

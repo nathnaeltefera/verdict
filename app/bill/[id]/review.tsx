@@ -1,12 +1,15 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { formatMoney, formatRate, toMinor } from '../../../src/core/money';
 import { computeTotals } from '../../../src/core/totals';
 import { useBills } from '../../../src/data/store';
-import { AppButton, Card, Pill, Row, SectionLabel } from '../../../src/ui/components/base';
-import { palette, radius, space, type as typo } from '../../../src/ui/theme';
+import { AppButton, Card, DottedRule, Pill, Row, SectionLabel } from '../../../src/ui/components/base';
+import { PresetRow } from '../../../src/ui/components/PresetRow';
+import { ReceiptEdge } from '../../../src/ui/components/ReceiptEdge';
+import { Centered, Screen } from '../../../src/ui/components/Screen';
+import { Stagger } from '../../../src/ui/components/Stagger';
+import { hairline, palette, radius, shadow, space, tones, type as typo } from '../../../src/ui/theme';
 import type { LineItem } from '../../../src/core/types';
 
 const RATE_PRESETS = [0, 0.02, 0.05, 0.1, 0.15];
@@ -40,7 +43,7 @@ function ItemEditor({
       </View>
 
       <View style={styles.itemBottom}>
-        <Text style={[typo.small, { color: palette.textFaint }]}>
+        <Text style={[typo.small, typo.mono, { fontSize: 12, color: palette.textFaint }]}>
           {item.qty} × {formatMoney(item.unitPrice, symbol)}
         </Text>
 
@@ -74,7 +77,6 @@ function ItemEditor({
 export default function Review() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const { getBill, updateItem, addItem, removeItem, setServiceChargeOverride } = useBills();
   const bill = getBill(String(id));
 
@@ -82,9 +84,9 @@ export default function Review() {
 
   if (!bill || !totals) {
     return (
-      <View style={styles.centered}>
+      <Centered>
         <Text style={[typo.body, { color: palette.textSoft }]}>That bill is no longer here.</Text>
-      </View>
+      </Centered>
     );
   }
 
@@ -92,28 +94,36 @@ export default function Review() {
   const { service, reconciliation } = totals;
   const overridden = bill.serviceChargeRateOverride !== undefined;
   const hasNonTaxable = totals.nonTaxableItems > 0;
+  const headTone = reconciliation.ok ? 'good' : 'warn';
 
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 110 }]}>
-        <Card tone={reconciliation.ok ? 'good' : 'warn'}>
-          <View style={styles.headRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={[typo.heading, { color: palette.text }]} numberOfLines={2}>
-                {bill.receipt.merchant}
-              </Text>
-              <Text style={[typo.small, { color: palette.textSoft, marginTop: 3 }]}>
-                {[bill.receipt.printedAt, bill.receipt.fsNo ? `FS ${bill.receipt.fsNo}` : null]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Text>
+    <Screen
+      keyboardAware
+      dock={<AppButton label="Looks right — add people" onPress={() => router.push(`/bill/${bill.id}/people`)} />}
+    >
+      <Stagger>
+        {/* The receipt header — torn off the top of the till roll. */}
+        <View style={shadow.card}>
+          <ReceiptEdge edge="top" color={tones[headTone].bg} />
+          <Card tone={headTone} style={styles.headCard}>
+            <View style={styles.headRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={[typo.title, { color: palette.text }]} numberOfLines={2}>
+                  {bill.receipt.merchant}
+                </Text>
+                <Text style={[typo.small, typo.mono, { fontSize: 12, color: palette.textSoft, marginTop: 4 }]}>
+                  {[bill.receipt.printedAt, bill.receipt.fsNo ? `FS ${bill.receipt.fsNo}` : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              </View>
+              <Pill label={reconciliation.ok ? '✓ Ties out' : '⚠ Check it'} tone={headTone} />
             </View>
-            <Pill label={reconciliation.ok ? '✓ Ties out' : '⚠ Check it'} tone={reconciliation.ok ? 'good' : 'warn'} />
-          </View>
-          <Text style={[typo.small, { color: palette.textSoft, marginTop: space.sm, lineHeight: 19 }]}>
-            {reconciliation.message}
-          </Text>
-        </Card>
+            <Text style={[typo.small, { color: palette.textSoft, marginTop: space.sm, lineHeight: 19 }]}>
+              {reconciliation.message}
+            </Text>
+          </Card>
+        </View>
 
         {/* Service charge — worked out from the paper, not assumed. */}
         <Card>
@@ -123,11 +133,13 @@ export default function Review() {
               {service.amount > 0 ? formatRate(service.rate) : 'None'}
             </Text>
             <View style={{ flex: 1 }} />
-            <Text style={[typo.title, typo.mono, { color: palette.text }]}>{formatMoney(service.amount, symbol)}</Text>
+            <Text style={[typo.monoBold, { fontSize: 20, color: palette.text }]}>
+              {formatMoney(service.amount, symbol)}
+            </Text>
           </View>
 
           <Text style={[typo.small, { color: palette.textSoft, marginTop: 4, lineHeight: 19 }]}>
-            {overridden ? service.note : service.note}
+            {service.note}
             {service.amount > 0 ? ` Base ${formatMoney(service.base, symbol)}.` : ''}
           </Text>
 
@@ -138,27 +150,22 @@ export default function Review() {
           </View>
 
           <SectionLabel style={{ marginTop: space.lg }}>Not right? Set it yourself</SectionLabel>
-          <View style={styles.presetRow}>
-            {RATE_PRESETS.map((rate) => {
-              const active = overridden && bill.serviceChargeRateOverride === rate;
-              return (
+          <PresetRow
+            options={RATE_PRESETS.map((rate) => ({ key: rate, label: rate === 0 ? 'None' : formatRate(rate) }))}
+            activeKey={overridden ? bill.serviceChargeRateOverride : undefined}
+            onSelect={(rate) => setServiceChargeOverride(bill.id, rate)}
+            trailing={
+              overridden ? (
                 <Pressable
-                  key={rate}
-                  onPress={() => setServiceChargeOverride(bill.id, rate)}
-                  style={[styles.preset, active && styles.presetActive]}
+                  onPress={() => setServiceChargeOverride(bill.id, undefined)}
+                  accessibilityRole="button"
+                  style={styles.usePrinted}
                 >
-                  <Text style={[typo.small, { color: active ? '#FFFFFF' : palette.textSoft }]}>
-                    {rate === 0 ? 'None' : formatRate(rate)}
-                  </Text>
+                  <Text style={[typo.small, { color: palette.accent }]}>Use printed</Text>
                 </Pressable>
-              );
-            })}
-            {overridden ? (
-              <Pressable onPress={() => setServiceChargeOverride(bill.id, undefined)} style={styles.preset}>
-                <Text style={[typo.small, { color: palette.accent }]}>Use printed</Text>
-              </Pressable>
-            ) : null}
-          </View>
+              ) : null
+            }
+          />
         </Card>
 
         {/* Items */}
@@ -167,7 +174,7 @@ export default function Review() {
             <SectionLabel style={{ marginBottom: 0 }}>
               {`${bill.receipt.items.length} line${bill.receipt.items.length === 1 ? '' : 's'}`}
             </SectionLabel>
-            <Pressable onPress={() => addItem(bill.id)} hitSlop={8}>
+            <Pressable onPress={() => addItem(bill.id)} hitSlop={8} accessibilityRole="button">
               <Text style={[typo.small, { color: palette.accent }]}>+ Add a line</Text>
             </Pressable>
           </View>
@@ -202,10 +209,10 @@ export default function Review() {
           {service.amount > 0 ? (
             <Row label={service.label} value={formatMoney(service.amount, symbol)} hint={`on ${formatMoney(service.base, symbol)}`} />
           ) : null}
-          <View style={styles.hr} />
+          <DottedRule />
           <Row label="Taxable base" value={formatMoney(totals.taxableBase, symbol)} />
           <Row label={`VAT ${formatRate(totals.taxRate)}`} value={formatMoney(totals.taxAmount, symbol)} />
-          <View style={styles.hr} />
+          <DottedRule />
           <Row label="Total" value={formatMoney(totals.total, symbol)} emphasis />
           {reconciliation.printedTotal !== undefined ? (
             <Row
@@ -215,32 +222,23 @@ export default function Review() {
             />
           ) : null}
         </Card>
-      </ScrollView>
-
-      <View style={[styles.dock, { paddingBottom: insets.bottom + space.md }]}>
-        <AppButton label="Looks right — add people" onPress={() => router.push(`/bill/${bill.id}/people`)} />
-      </View>
-    </View>
+      </Stagger>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: palette.bg },
-  centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: space.lg, gap: space.lg },
+  headCard: {
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderTopWidth: 0,
+    shadowOpacity: 0,
+    elevation: 0,
+  },
   headRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space.sm },
   serviceRow: { flexDirection: 'row', alignItems: 'baseline', gap: space.sm },
   badgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.md },
-  presetRow: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
-  preset: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: radius.pill,
-    backgroundColor: palette.surfaceAlt,
-    borderWidth: 1,
-    borderColor: palette.line,
-  },
-  presetActive: { backgroundColor: palette.accent, borderColor: palette.accent },
+  usePrinted: { paddingHorizontal: 10, paddingVertical: 8 },
   itemsHead: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -248,7 +246,7 @@ const styles = StyleSheet.create({
     marginBottom: space.sm,
   },
   item: { padding: space.md, gap: space.sm },
-  itemDivider: { borderTopWidth: 1, borderTopColor: palette.line },
+  itemDivider: { borderTopWidth: hairline, borderTopColor: palette.line },
   itemTop: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
   itemName: { flex: 1, color: palette.text, paddingVertical: 2 },
   itemBottom: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
@@ -260,17 +258,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: radius.sm,
     backgroundColor: palette.surfaceAlt,
-  },
-  hr: { height: 1, backgroundColor: palette.line, marginVertical: space.sm },
-  dock: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: space.lg,
-    paddingTop: space.md,
-    backgroundColor: palette.bg,
-    borderTopWidth: 1,
-    borderTopColor: palette.line,
   },
 });
