@@ -3,7 +3,8 @@ import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
 import { Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { LOMYAD, MESSANTA_COFFEE } from '../src/core/fixtures';
-import { isConfigured, readReceipt, ReceiptReadError } from '../src/data/ocr';
+import { isConfigured, readReceipt } from '../src/data/ocr';
+import { prepareImage } from '../src/data/prepareImage';
 import { useBills } from '../src/data/store';
 import { AppButton, Card, SectionLabel } from '../src/ui/components/base';
 import { palette, radius, space, type as typo } from '../src/ui/theme';
@@ -28,8 +29,10 @@ export default function Scan() {
       setError(null);
       setBusy(true);
       try {
-        if (!asset.base64) throw new ReceiptReadError('That image came back empty. Try again.');
-        const receipt = await readReceipt(asset.base64, asset.mimeType ?? 'image/jpeg');
+        // Shrink first. A full-resolution photo is too many bytes to upload
+        // from a phone before something in the chain gives up.
+        const prepared = await prepareImage(asset.uri, asset.width, asset.height);
+        const receipt = await readReceipt(prepared.base64, prepared.mimeType);
         const bill = createBill(receipt, asset.uri);
         router.replace(`/bill/${bill.id}/review`);
       } catch (err) {
@@ -48,8 +51,7 @@ export default function Scan() {
       return;
     }
     const result = await ImagePicker.launchCameraAsync({
-      base64: true,
-      quality: 0.7,
+      quality: 1,
       allowsEditing: true,
       exif: false,
     });
@@ -58,8 +60,7 @@ export default function Scan() {
 
   const pickPhoto = useCallback(async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
-      base64: true,
-      quality: 0.7,
+      quality: 1,
       allowsEditing: true,
       mediaTypes: ['images'],
       exif: false,

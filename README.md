@@ -146,6 +146,24 @@ npx expo start --clear
 `webBaseUrl` in `extra` is optional — without it the *Copy a web link* action is
 hidden and everything else still works.
 
+### Photos are shrunk before they are sent
+
+`src/data/prepareImage.ts` resizes every photo to 1600px on the long edge at
+JPEG quality 0.7 — around 200–300 KB, roughly a tenth of what the camera
+produces. This is not an optimisation, it is the difference between working and
+not: a full-resolution iPhone photo is 3–5 MB once base64-encoded, and the Edge
+Function sits waiting on a body that slow uplink never finishes delivering until
+Supabase kills the worker on wall-clock time. The caller sees no response at
+all, which the app could only report as "could not reach the receipt reader".
+
+Both ends now refuse anything over 2 MB of base64 rather than starting an upload
+that cannot finish, the client gives up after 60s with a message that says so,
+and the function abandons the model call at 45s so it returns an error instead of
+being killed silently.
+
+The function logs `body.read`, `model.start` and `model.done` with sizes and
+timings, so the next failure can be read straight out of the Supabase logs.
+
 ### The model
 
 One `gemini-3.7-flash` call per receipt, thinking level high, temperature 0 —

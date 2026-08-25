@@ -11,6 +11,9 @@ import { GoogleGenAI, ApiError, ThinkingLevel } from 'npm:@google/genai@^2.18.0'
 
 const DEFAULT_MODEL = 'gemini-3.7-flash';
 
+/** Comfortably inside the Edge Function wall-clock limit, with room to reply. */
+const MODEL_TIMEOUT_MS = 45_000;
+
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -96,7 +99,9 @@ const RECEIPT_SCHEMA = {
 };
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
-const MAX_BASE64_BYTES = 7_000_000; // ~5 MB of image, comfortably under the request cap.
+// The app shrinks photos to a few hundred KB. Anything near this cap means the
+// client-side resize did not run, and accepting it only ends in a timeout.
+const MAX_BASE64_BYTES = 2_000_000;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -122,6 +127,7 @@ Deno.serve(async (req: Request) => {
   } catch {
     return json({ error: 'Body must be JSON: { image: "<base64>", mime_type: "image/jpeg" }' }, 400);
   }
+  console.log(JSON.stringify({ at: 'body.read', image_b64_len: image.length }));
 
   if (!image) return json({ error: 'No image supplied.' }, 400);
   if (image.length > MAX_BASE64_BYTES) {
@@ -131,7 +137,13 @@ Deno.serve(async (req: Request) => {
 
   const ai = new GoogleGenAI({ apiKey });
 
+  // Supabase kills the worker on wall-clock time and the caller sees nothing at
+  // all. Stopping ourselves first turns that into an answer we can explain.
+  const deadline = AbortSignal.timeout(MODEL_TIMEOUT_MS);
+
   try {
+    console.log(JSON.stringify({ at: 'model.start', model, image_b64_len: image.length, mimeType }));
+    const startedAt = Date.now();
     const response = await ai.models.generateContent({
       model,
       contents: [
@@ -152,8 +164,10 @@ Deno.serve(async (req: Request) => {
         // Deterministic transcription: we want the same digits every time, not variety.
         temperature: 0,
         thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+        abortSignal: deadline,
       },
     });
+    console.log(JSON.stringify({ at: 'model.done', ms: Date.now() - startedAt }));
 
     const blockReason = response.promptFeedback?.blockReason;
     if (blockReason) {
@@ -192,6 +206,11 @@ Deno.serve(async (req: Request) => {
       },
     });
   } catch (error) {
+    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+      console.error(JSON.stringify({ at: 'model.timeout', model }));
+      return json({ error: 'The receipt reader timed out on that photo. Try a straighter, brighter shot.' }, 504);
+    }
+    console.error(JSON.stringify({ at: 'model.error', message: String(error).slice(0, 300) }));
     if (error instanceof ApiError) {
       if (error.status === 429) {
         return json({ error: 'The receipt reader is over its rate limit. Try again in a moment.' }, 429);

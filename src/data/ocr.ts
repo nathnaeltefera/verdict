@@ -120,6 +120,20 @@ export function toReceipt(raw: RawReceipt): Receipt {
 
 export class ReceiptReadError extends Error {}
 
+/**
+ * Give up before the Edge Function's own wall-clock limit does. A request that
+ * has not come back by now is not going to, and the user deserves to be told
+ * that rather than watch a spinner.
+ */
+const REQUEST_TIMEOUT_MS = 60_000;
+
+/**
+ * Refuse to start an upload that cannot finish. The reader shrinks photos to a
+ * few hundred KB; anything at this size means the resize did not happen, and
+ * pushing it would just stall until something times out.
+ */
+const MAX_BASE64_LENGTH = 2_000_000;
+
 export async function readReceipt(base64Image: string, mimeType = 'image/jpeg'): Promise<Receipt> {
   const { supabaseUrl, supabaseAnonKey } = config();
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -127,6 +141,15 @@ export async function readReceipt(base64Image: string, mimeType = 'image/jpeg'):
       'Receipt reading is not configured yet. Add supabaseUrl and supabaseAnonKey to app.json > expo.extra.',
     );
   }
+
+  if (base64Image.length > MAX_BASE64_LENGTH) {
+    throw new ReceiptReadError(
+      `That photo is ${Math.round(base64Image.length / 1024)} KB after encoding — too big to send. Retake it a little further back.`,
+    );
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   let response: Response;
   try {
@@ -138,9 +161,16 @@ export async function readReceipt(base64Image: string, mimeType = 'image/jpeg'):
         apikey: supabaseAnonKey,
       },
       body: JSON.stringify({ image: base64Image, mime_type: mimeType }),
+      signal: controller.signal,
     });
-  } catch {
-    throw new ReceiptReadError('Could not reach the receipt reader. Check your connection and try again.');
+  } catch (err) {
+    throw new ReceiptReadError(
+      err instanceof Error && err.name === 'AbortError'
+        ? 'The receipt reader took too long to answer. Try again, or use a sample receipt.'
+        : 'Could not reach the receipt reader. Check your connection and try again.',
+    );
+  } finally {
+    clearTimeout(timer);
   }
 
   if (!response.ok) {
