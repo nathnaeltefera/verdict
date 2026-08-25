@@ -10,11 +10,20 @@ import { toMinor } from '../core/money';
 
 type Extra = { supabaseUrl?: string; supabaseAnonKey?: string };
 
+/** An unset value in app.json is an empty string, not undefined — `??` would keep it. */
+function firstSet(...values: Array<string | undefined>): string {
+  for (const value of values) {
+    if (value !== undefined && value.trim() !== '') return value.trim();
+  }
+  return '';
+}
+
 function config(): Required<Extra> {
   const extra = (Constants.expoConfig?.extra ?? {}) as Extra;
-  const supabaseUrl = extra.supabaseUrl ?? process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-  const supabaseAnonKey = extra.supabaseAnonKey ?? process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-  return { supabaseUrl, supabaseAnonKey };
+  return {
+    supabaseUrl: firstSet(extra.supabaseUrl, process.env.EXPO_PUBLIC_SUPABASE_URL),
+    supabaseAnonKey: firstSet(extra.supabaseAnonKey, process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY),
+  };
 }
 
 export function isConfigured(): boolean {

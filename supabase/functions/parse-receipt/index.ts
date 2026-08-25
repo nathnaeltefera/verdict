@@ -6,7 +6,7 @@
 // The Anthropic key lives here and only here — the phone app authenticates with
 // the Supabase anon key and never holds a model credential.
 
-import Anthropic from 'npm:@anthropic-ai/sdk@^0.70.0';
+import Anthropic from 'npm:@anthropic-ai/sdk@^0.120.0';
 
 const MODEL = 'claude-opus-5';
 

@@ -47,8 +47,8 @@
       ]
     ],
     "extra": {
-      "supabaseUrl": "",
-      "supabaseAnonKey": "",
+      "supabaseUrl": "https://ueaprnuipvmhkjezaajo.supabase.co",
+      "supabaseAnonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVlYXBybnVpcHZtaGtqZXphYWpvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc2NjE2NDYsImV4cCI6MjEwMzIzNzY0Nn0.K3jVmav1937bObabePr9swd5isdP3HFDes9k2u0sQDE",
       "webBaseUrl": ""
     }
   }

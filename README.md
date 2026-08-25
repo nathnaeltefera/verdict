@@ -125,23 +125,35 @@ screen — no backend needed to try it.
 Photo → line items runs through a Supabase Edge Function so the model API key
 never ships inside the app.
 
+The function is deployed to the `verdict` Supabase project and its URL and anon
+key are already in `app.json`. One step remains, and it can only be done by
+someone holding an Anthropic API key:
+
 ```bash
-supabase functions deploy parse-receipt
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
+supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref ueaprnuipvmhkjezaajo
 ```
 
-Then fill in `app.json`:
+or Supabase dashboard → Edge Functions → Secrets. Until that is set, the
+function answers every request with *"ANTHROPIC_API_KEY is not set on this
+function."*
 
-```json
-"extra": {
-  "supabaseUrl": "https://<project>.supabase.co",
-  "supabaseAnonKey": "<anon key>",
-  "webBaseUrl": "https://<wherever you host claim.html>"
-}
+After changing `app.json`, rebuild with `--clear` — Metro caches the resolved
+app config, and a warm cache will keep serving the old one:
+
+```bash
+npx expo start --clear
 ```
 
-`webBaseUrl` is optional — without it the *Copy a web link* action is hidden and
-everything else still works.
+`webBaseUrl` in `extra` is optional — without it the *Copy a web link* action is
+hidden and everything else still works.
+
+### What a scan costs
+
+Each receipt is one `claude-opus-5` call with adaptive thinking at high effort —
+roughly 5–10¢. Note that anyone holding the app or this repo can invoke the
+function and spend against that key, so set a spend limit on it. Dropping
+`output_config.effort` to `medium`, or the model to `claude-sonnet-5`, cuts the
+cost several-fold at some accuracy risk.
 
 The function (`supabase/functions/parse-receipt/index.ts`) uses `claude-opus-5`
 with a strict tool schema, so the response is always valid structured JSON. Its

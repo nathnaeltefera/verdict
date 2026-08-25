@@ -91,7 +91,11 @@ function encode(payload: SharePayload): string {
 
 export function webBaseUrl(): string {
   const extra = (Constants.expoConfig?.extra ?? {}) as { webBaseUrl?: string };
-  return extra.webBaseUrl ?? process.env.EXPO_PUBLIC_WEB_BASE_URL ?? '';
+  const candidates = [extra.webBaseUrl, process.env.EXPO_PUBLIC_WEB_BASE_URL];
+  for (const value of candidates) {
+    if (value !== undefined && value.trim() !== '') return value.trim();
+  }
+  return '';
 }
 
 export function shareLink(bill: Bill, result: SplitResult): string | null {
