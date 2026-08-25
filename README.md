@@ -96,6 +96,11 @@ Three ways to hand out the numbers:
 
 ## Running it on your iPhone
 
+**Expo Go does not work with this project.** It is on Expo SDK 57, and the App
+Store build of Expo Go supports whatever SDK Expo has shipped it for — if that
+is older, you get *"Project is incompatible with this version of Expo Go."*
+Use a development build instead; it does not depend on Expo Go at all.
+
 You need a Mac, Xcode, and a cable.
 
 ```bash
@@ -145,6 +150,18 @@ model reports the printed surcharge *amount* and is explicitly told not to work
 the rate out — that is the app's job, and the app can show its working.
 
 ---
+
+## Poking at it without a phone
+
+```bash
+npm install
+npx expo start --web
+```
+
+Runs the whole app in a browser via react-native-web — every screen, the sample
+receipts, assignment, the split. Useful while Xcode downloads. The share sheet
+falls back to copying, since browsers without `navigator.share` have nothing to
+open.
 
 ## Layout
 

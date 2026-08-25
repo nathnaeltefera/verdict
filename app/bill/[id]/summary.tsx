@@ -286,7 +286,12 @@ export default function Summary() {
           <AppButton
             label="Send to the group"
             style={{ flex: 2 }}
-            onPress={() => Share.share({ message: shareText(bill, result) }).catch(() => {})}
+            onPress={() => {
+              const text = shareText(bill, result);
+              // Browsers without a native share sheet reject — fall back to the clipboard
+              // rather than leaving the button feeling broken.
+              Share.share({ message: text }).catch(() => copy(text, 'Copied the whole split'));
+            }}
           />
         </View>
       </View>

@@ -21,13 +21,20 @@ function claimSummary(bill: Bill, item: LineItem, symbol: string): { text: strin
     return { text: `${person.name} — ${formatMoney(item.amount, symbol)}`, tone: 'good' };
   }
 
-  const parts = previewLineSplit(bill, item);
-  const even = parts.every((p) => p.amount === parts[0].amount);
-  const unequal = ids.some((pid) => claims[pid] !== 1);
-  if (even && !unequal) {
-    return { text: `Shared ${ids.length} ways · ${formatMoney(parts[0].amount, symbol)} each`, tone: 'good' };
-  }
-  return { text: `Shared ${ids.length} ways, unevenly`, tone: 'good' };
+  // "Uneven" is about the shares people were given, not the leftover cent. An
+  // amount like 273.28 across three never divides exactly, and calling that
+  // "uneven" would be alarming nonsense — show the range instead.
+  const unevenShares = ids.some((pid) => claims[pid] !== claims[ids[0]]);
+  if (unevenShares) return { text: `Shared ${ids.length} ways, unevenly`, tone: 'good' };
+
+  const amounts = previewLineSplit(bill, item).map((p) => p.amount);
+  const low = Math.min(...amounts);
+  const high = Math.max(...amounts);
+  const each =
+    low === high
+      ? `${formatMoney(low, symbol)} each`
+      : `${formatMoney(low, symbol)}–${formatMoney(high, '').trim()}`;
+  return { text: `Shared ${ids.length} ways · ${each}`, tone: 'good' };
 }
 
 function ItemCard({ bill, item, symbol }: { bill: Bill; item: LineItem; symbol: string }) {
