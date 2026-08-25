@@ -6,10 +6,15 @@
 //
 // The model key lives here and only here — the phone app authenticates with the
 // Supabase anon key and never holds a model credential.
-
-import { GoogleGenAI, ApiError, ThinkingLevel } from 'npm:@google/genai@^2.18.0';
+//
+// This calls the Gemini REST endpoint with plain fetch rather than @google/genai
+// on purpose. Supabase Edge Functions get a small CPU budget per request, and
+// evaluating a large npm module graph inside it is a real way to spend that
+// budget on nothing. The request here is one JSON POST; a dependency buys
+// nothing and risks a WORKER_RESOURCE_LIMIT.
 
 const DEFAULT_MODEL = 'gemini-3.7-flash';
+const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 /** Comfortably inside the Edge Function wall-clock limit, with room to reply. */
 const MODEL_TIMEOUT_MS = 45_000;
@@ -30,7 +35,8 @@ Rules, in order of importance:
 2. Line items are the rows between the "Description / Qty / Price / Amount" header
    and the first total line (SUBTOTAL, TXBL, TOTAL). Each row's rightmost figure is
    its amount. A row printed as "7 x *39.04   *273.28" has qty 7, unit_price 39.04,
-   amount 273.28.
+   amount 273.28. A long description may wrap, pushing its qty and figures onto the
+   next line — that is still one item, not two.
 3. Taxability is per line and matters. A line suffixed "(N)", or one covered by a
    NOTXBL / non-taxable total, is taxable: false. Lines under TXBL1 (or with no
    marker at all on an all-taxable receipt) are taxable: true. Record the printed
@@ -110,6 +116,16 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+type GeminiResponse = {
+  candidates?: Array<{
+    content?: { parts?: Array<{ text?: string }> };
+    finishReason?: string;
+  }>;
+  promptFeedback?: { blockReason?: string };
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  error?: { code?: number; message?: string; status?: string };
+};
+
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ error: 'Use POST.' }, 405);
@@ -127,102 +143,132 @@ Deno.serve(async (req: Request) => {
   } catch {
     return json({ error: 'Body must be JSON: { image: "<base64>", mime_type: "image/jpeg" }' }, 400);
   }
-  console.log(JSON.stringify({ at: 'body.read', image_b64_len: image.length }));
+  console.log(JSON.stringify({ at: 'body.read', image_b64_len: image.length, mimeType }));
 
   if (!image) return json({ error: 'No image supplied.' }, 400);
   if (image.length > MAX_BASE64_BYTES) {
-    return json({ error: 'That photo is too large — take it again at a lower resolution.' }, 413);
+    return json(
+      {
+        error: `That photo is ${Math.round(image.length / 1024)} KB encoded — too large. Update the app so it shrinks photos before sending.`,
+      },
+      413,
+    );
   }
   if (!ALLOWED_MIME.has(mimeType)) return json({ error: `Unsupported image type: ${mimeType}` }, 415);
 
-  const ai = new GoogleGenAI({ apiKey });
+  const payload = {
+    systemInstruction: { parts: [{ text: SYSTEM }] },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType, data: image } },
+          {
+            text: 'Transcribe this receipt. Return every line item with its own amount and taxability, and the printed totals. Do not calculate anything the paper does not show.',
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseJsonSchema: RECEIPT_SCHEMA,
+      // Deterministic transcription: we want the same digits every time, not variety.
+      temperature: 0,
+    },
+  };
 
-  // Supabase kills the worker on wall-clock time and the caller sees nothing at
-  // all. Stopping ourselves first turns that into an answer we can explain.
-  const deadline = AbortSignal.timeout(MODEL_TIMEOUT_MS);
-
+  const startedAt = Date.now();
+  let upstream: Response;
   try {
-    console.log(JSON.stringify({ at: 'model.start', model, image_b64_len: image.length, mimeType }));
-    const startedAt = Date.now();
-    const response = await ai.models.generateContent({
-      model,
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { inlineData: { mimeType, data: image } },
-            {
-              text: 'Transcribe this receipt. Return every line item with its own amount and taxability, and the printed totals. Do not calculate anything the paper does not show.',
-            },
-          ],
-        },
-      ],
-      config: {
-        systemInstruction: SYSTEM,
-        responseMimeType: 'application/json',
-        responseJsonSchema: RECEIPT_SCHEMA,
-        // Deterministic transcription: we want the same digits every time, not variety.
-        temperature: 0,
-        thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
-        abortSignal: deadline,
-      },
-    });
-    console.log(JSON.stringify({ at: 'model.done', ms: Date.now() - startedAt }));
-
-    const blockReason = response.promptFeedback?.blockReason;
-    if (blockReason) {
-      return json({ error: `The model declined to read that image (${blockReason}).` }, 422);
-    }
-
-    const finish = response.candidates?.[0]?.finishReason;
-    if (finish && finish !== 'STOP') {
-      return json(
-        {
-          error:
-            finish === 'MAX_TOKENS'
-              ? 'That receipt was too long to read in one go.'
-              : `The model stopped early (${finish}). Try a clearer photo.`,
-        },
-        502,
-      );
-    }
-
-    const text = response.text;
-    if (!text) return json({ error: 'The model returned nothing. Try a clearer photo.' }, 502);
-
-    let receipt: unknown;
-    try {
-      receipt = JSON.parse(text);
-    } catch {
-      return json({ error: 'The model did not return a structured receipt. Try a clearer photo.' }, 502);
-    }
-
-    return json({
-      receipt,
-      usage: {
-        input_tokens: response.usageMetadata?.promptTokenCount,
-        output_tokens: response.usageMetadata?.candidatesTokenCount,
-        model,
-      },
+    console.log(JSON.stringify({ at: 'model.start', model }));
+    upstream = await fetch(`${API_ROOT}/${model}:generateContent`, {
+      method: 'POST',
+      headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      // Stop ourselves before Supabase kills the worker on wall-clock time, so
+      // the caller gets an explanation rather than no response at all.
+      signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
     });
   } catch (error) {
-    if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
-      console.error(JSON.stringify({ at: 'model.timeout', model }));
-      return json({ error: 'The receipt reader timed out on that photo. Try a straighter, brighter shot.' }, 504);
-    }
-    console.error(JSON.stringify({ at: 'model.error', message: String(error).slice(0, 300) }));
-    if (error instanceof ApiError) {
-      if (error.status === 429) {
-        return json({ error: 'The receipt reader is over its rate limit. Try again in a moment.' }, 429);
-      }
-      if (error.status === 401 || error.status === 403) {
-        return json({ error: 'The receipt reader’s API key was rejected.' }, 500);
-      }
-      if (error.status === 404) {
-        return json({ error: `The model "${model}" is not available to this key.` }, 500);
-      }
-      return json({ error: `Receipt reader error (${error.status}).` }, 502);
-    }
-    return json({ error: 'Unexpected failure while reading the receipt.' }, 500);
+    const timedOut = error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
+    console.error(JSON.stringify({ at: 'model.fetch_failed', timedOut, message: String(error).slice(0, 200) }));
+    return json(
+      {
+        error: timedOut
+          ? 'The receipt reader timed out on that photo. Try a straighter, brighter shot.'
+          : 'The receipt reader could not reach the model.',
+      },
+      504,
+    );
   }
+
+  const raw = await upstream.text();
+  console.log(JSON.stringify({ at: 'model.done', status: upstream.status, ms: Date.now() - startedAt, bytes: raw.length }));
+
+  if (!upstream.ok) {
+    // Surface the upstream reason — a rejected key, an unknown model and an
+    // unsupported schema field all look identical without it.
+    console.error(JSON.stringify({ at: 'model.http_error', status: upstream.status, body: raw.slice(0, 500) }));
+    if (upstream.status === 429) {
+      return json({ error: 'The receipt reader is over its rate limit. Try again in a moment.' }, 429);
+    }
+    if (upstream.status === 401 || upstream.status === 403) {
+      return json({ error: 'The receipt reader’s API key was rejected.' }, 500);
+    }
+    if (upstream.status === 404) {
+      return json({ error: `The model "${model}" is not available to this key.` }, 500);
+    }
+    let detail = '';
+    try {
+      detail = (JSON.parse(raw) as GeminiResponse).error?.message ?? '';
+    } catch {
+      detail = raw.slice(0, 160);
+    }
+    return json({ error: `Receipt reader error (${upstream.status}). ${detail}`.trim() }, 502);
+  }
+
+  let parsed: GeminiResponse;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return json({ error: 'The model returned something unreadable. Try again.' }, 502);
+  }
+
+  if (parsed.promptFeedback?.blockReason) {
+    return json({ error: `The model declined to read that image (${parsed.promptFeedback.blockReason}).` }, 422);
+  }
+
+  const candidate = parsed.candidates?.[0];
+  const finish = candidate?.finishReason;
+  if (finish && finish !== 'STOP') {
+    return json(
+      {
+        error:
+          finish === 'MAX_TOKENS'
+            ? 'That receipt was too long to read in one go.'
+            : `The model stopped early (${finish}). Try a clearer photo.`,
+      },
+      502,
+    );
+  }
+
+  const text = candidate?.content?.parts?.map((part) => part.text ?? '').join('') ?? '';
+  if (!text) return json({ error: 'The model returned nothing. Try a clearer photo.' }, 502);
+
+  let receipt: unknown;
+  try {
+    receipt = JSON.parse(text);
+  } catch {
+    console.error(JSON.stringify({ at: 'model.unparseable', sample: text.slice(0, 200) }));
+    return json({ error: 'The model did not return a structured receipt. Try a clearer photo.' }, 502);
+  }
+
+  return json({
+    receipt,
+    usage: {
+      input_tokens: parsed.usageMetadata?.promptTokenCount,
+      output_tokens: parsed.usageMetadata?.candidatesTokenCount,
+      model,
+    },
+  });
 });

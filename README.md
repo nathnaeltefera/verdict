@@ -164,6 +164,14 @@ being killed silently.
 The function logs `body.read`, `model.start` and `model.done` with sizes and
 timings, so the next failure can be read straight out of the Supabase logs.
 
+### Why the function uses plain fetch
+
+Supabase Edge Functions get a small CPU budget per request, and evaluating a
+large npm module graph inside it is a real way to spend that budget on nothing —
+`WORKER_RESOURCE_LIMIT` with the request never reaching the model. The call here
+is one JSON POST to the Gemini REST endpoint, so `@google/genai` bought nothing
+and carried that risk. The function has no dependencies at all.
+
 ### The model
 
 One `gemini-3.7-flash` call per receipt, thinking level high, temperature 0 —
