@@ -18,6 +18,9 @@ export default function Scan() {
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Nothing behind the camera until the reader function is deployed, so don't
+  // let someone photograph a receipt we already know we cannot read.
+  const ready = isConfigured();
 
   const handle = useCallback(
     async (asset: ImagePicker.ImagePickerAsset) => {
@@ -79,7 +82,9 @@ export default function Scan() {
           <View style={styles.framePlaceholder}>
             <Text style={{ fontSize: 46 }}>🧾</Text>
             <Text style={[typo.body, { color: palette.textSoft, marginTop: space.sm, textAlign: 'center' }]}>
-              Lay the receipt flat and fill the frame.{'\n'}Rotated is fine — it gets read either way.
+              {ready
+                ? 'Lay the receipt flat and fill the frame.\nRotated is fine — it gets read either way.'
+                : 'Once the reader is connected, a photo of the receipt lands here.'}
             </Text>
           </View>
         )}
@@ -101,26 +106,47 @@ export default function Scan() {
         </Card>
       ) : null}
 
-      <View style={{ gap: space.sm }}>
-        <AppButton label="Take a photo" icon="📷" onPress={takePhoto} disabled={busy} />
-        <AppButton label="Choose from library" variant="secondary" onPress={pickPhoto} disabled={busy} />
-      </View>
-
-      {!isConfigured() ? (
+      {!ready ? (
         <Card tone="warn">
-          <Text style={[typo.heading, { color: palette.warn }]}>Reader not connected</Text>
+          <Text style={[typo.heading, { color: palette.warn }]}>Reader not connected yet</Text>
           <Text style={[typo.body, { color: palette.text, marginTop: 6, lineHeight: 21 }]}>
-            Deploy the <Text style={typo.mono}>parse-receipt</Text> function and put your Supabase URL and anon key in
-            app.json under <Text style={typo.mono}>expo.extra</Text>. Until then, the two sample receipts below work
-            end to end.
+            Photographing a receipt needs the <Text style={typo.mono}>parse-receipt</Text> function deployed, with your
+            Supabase URL and anon key in app.json under <Text style={typo.mono}>expo.extra</Text>. Everything else —
+            assigning, splitting, settling — works right now on the sample receipts below.
           </Text>
         </Card>
       ) : null}
 
-      <SectionLabel style={{ marginTop: space.sm }}>Or start from a sample</SectionLabel>
       <View style={{ gap: space.sm }}>
-        <AppButton label="Messanta Coffee · 5% service" variant="secondary" onPress={() => openSample('messanta')} />
-        <AppButton label="Lomyad · mixed VAT lines" variant="secondary" onPress={() => openSample('lomyad')} />
+        <AppButton
+          label={ready ? 'Take a photo' : 'Take a photo — needs the reader'}
+          icon={ready ? '📷' : undefined}
+          variant={ready ? 'primary' : 'secondary'}
+          onPress={takePhoto}
+          disabled={busy || !ready}
+        />
+        <AppButton
+          label="Choose from library"
+          variant="secondary"
+          onPress={pickPhoto}
+          disabled={busy || !ready}
+        />
+      </View>
+
+      <SectionLabel style={{ marginTop: space.sm }}>
+        {ready ? 'Or start from a sample' : 'Try it on a sample receipt'}
+      </SectionLabel>
+      <View style={{ gap: space.sm }}>
+        <AppButton
+          label="Messanta Coffee · 5% service"
+          variant={ready ? 'secondary' : 'primary'}
+          onPress={() => openSample('messanta')}
+        />
+        <AppButton
+          label="Lomyad · mixed VAT lines"
+          variant={ready ? 'secondary' : 'primary'}
+          onPress={() => openSample('lomyad')}
+        />
       </View>
     </ScrollView>
   );
