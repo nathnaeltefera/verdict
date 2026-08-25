@@ -126,15 +126,14 @@ Photo → line items runs through a Supabase Edge Function so the model API key
 never ships inside the app.
 
 The function is deployed to the `verdict` Supabase project and its URL and anon
-key are already in `app.json`. One step remains, and it can only be done by
-someone holding an Anthropic API key:
+key are already in `app.json`. One step remains:
 
 ```bash
-supabase secrets set ANTHROPIC_API_KEY=sk-ant-... --project-ref ueaprnuipvmhkjezaajo
+supabase secrets set GEMINI_API_KEY=... --project-ref ueaprnuipvmhkjezaajo
 ```
 
 or Supabase dashboard → Edge Functions → Secrets. Until that is set, the
-function answers every request with *"ANTHROPIC_API_KEY is not set on this
+function answers every request with *"GEMINI_API_KEY is not set on this
 function."*
 
 After changing `app.json`, rebuild with `--clear` — Metro caches the resolved
@@ -147,19 +146,29 @@ npx expo start --clear
 `webBaseUrl` in `extra` is optional — without it the *Copy a web link* action is
 hidden and everything else still works.
 
-### What a scan costs
+### The model
 
-Each receipt is one `claude-opus-5` call with adaptive thinking at high effort —
-roughly 5–10¢. Note that anyone holding the app or this repo can invoke the
-function and spend against that key, so set a spend limit on it. Dropping
-`output_config.effort` to `medium`, or the model to `claude-sonnet-5`, cuts the
-cost several-fold at some accuracy risk.
+One `gemini-3.7-flash` call per receipt, thinking level high, temperature 0 —
+transcription should give the same digits every time, not variety. Structured
+output is enforced with `responseJsonSchema`, so the reply is always valid JSON
+in the shape `src/data/ocr.ts` expects.
 
-The function (`supabase/functions/parse-receipt/index.ts`) uses `claude-opus-5`
-with a strict tool schema, so the response is always valid structured JSON. Its
-prompt is deliberately built around one rule: **transcribe, never compute.** The
-model reports the printed surcharge *amount* and is explicitly told not to work
-the rate out — that is the app's job, and the app can show its working.
+Override the model without redeploying by setting a second secret:
+
+```bash
+supabase secrets set GEMINI_MODEL=gemini-2.5-pro --project-ref ueaprnuipvmhkjezaajo
+```
+
+Models confirmed available on this key: `gemini-3.7-flash`, `gemini-3.6-flash`,
+`gemini-3.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-3.1-flash-lite`.
+
+Note that anyone holding the app or this repo can invoke the function and spend
+against that key, so keep an eye on its quota.
+
+The function's prompt is deliberately built around one rule: **transcribe, never
+compute.** The model reports the printed surcharge *amount* and is explicitly
+told not to work the rate out — that is the app's job, and the app can show its
+working.
 
 ---
 
