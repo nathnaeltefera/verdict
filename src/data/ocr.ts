@@ -121,11 +121,10 @@ export function toReceipt(raw: RawReceipt): Receipt {
 export class ReceiptReadError extends Error {}
 
 /**
- * Give up before the Edge Function's own wall-clock limit does. A request that
- * has not come back by now is not going to, and the user deserves to be told
- * that rather than watch a spinner.
+ * Outlast the function's own deadline, so its explanation reaches the user
+ * instead of being pre-empted by ours. It stops itself at 100s.
  */
-const REQUEST_TIMEOUT_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 120_000;
 
 /**
  * Refuse to start an upload that cannot finish. The reader shrinks photos to a
@@ -174,11 +173,20 @@ export async function readReceipt(base64Image: string, mimeType = 'image/jpeg'):
   }
 
   if (!response.ok) {
-    const detail = await response.text().catch(() => '');
+    // The function answers with { error }. Show that sentence, not the raw JSON
+    // it arrived in — a reader should never be shown a serialised object.
+    const body = await response.text().catch(() => '');
+    let detail = '';
+    try {
+      detail = (JSON.parse(body) as { error?: string }).error ?? '';
+    } catch {
+      detail = body.slice(0, 160);
+    }
     throw new ReceiptReadError(
-      response.status === 401 || response.status === 403
-        ? 'The receipt reader rejected this app’s key.'
-        : `The receipt reader failed (${response.status}). ${detail.slice(0, 160)}`.trim(),
+      detail ||
+        (response.status === 401 || response.status === 403
+          ? 'The receipt reader rejected this app’s key.'
+          : `The receipt reader failed (${response.status}).`),
     );
   }
 

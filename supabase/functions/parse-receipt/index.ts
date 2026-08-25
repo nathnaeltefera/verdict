@@ -16,8 +16,11 @@
 const DEFAULT_MODEL = 'gemini-3.7-flash';
 const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-/** Comfortably inside the Edge Function wall-clock limit, with room to reply. */
-const MODEL_TIMEOUT_MS = 45_000;
+/**
+ * Supabase kills the worker at 150s. Stop well inside that so we can still
+ * answer. 45s was too tight: a real receipt took longer than that just to think.
+ */
+const MODEL_TIMEOUT_MS = 100_000;
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -30,8 +33,8 @@ const SYSTEM = `You read Ethiopian fiscal receipts (Datecs, i-POS, CNET Systems 
 Rules, in order of importance:
 
 1. Transcribe, never compute. Every number you emit must be a number you can see
-   on the paper. If the amount column is cut off or unreadable, return null for
-   that field rather than multiplying qty by unit price yourself.
+   on the paper. If the amount column is cut off or unreadable, leave that field
+   out rather than multiplying qty by unit price yourself.
 2. Line items are the rows between the "Description / Qty / Price / Amount" header
    and the first total line (SUBTOTAL, TXBL, TOTAL). Each row's rightmost figure is
    its amount. A row printed as "7 x *39.04   *273.28" has qty 7, unit_price 39.04,
@@ -44,7 +47,7 @@ Rules, in order of importance:
 4. A service charge is any line labelled Surcharge, Service, Service Charge, or
    S/C. Report its printed amount in service_charge. Only fill service_charge_rate
    if the receipt literally prints a percentage next to it — do NOT work the rate
-   out yourself; the app derives it. If there is no such line, return null for both.
+   out yourself; the app derives it. If there is no such line, omit both fields.
 5. Report tax_rate only when printed (e.g. "TAX1 15%"). Report taxable_base from
    TXBL1 and non_taxable_total from NOTXBL when present.
 6. Money as plain decimal numbers, no currency symbols, no asterisks, no thousands
@@ -54,22 +57,25 @@ Rules, in order of importance:
    you were unsure about in notes.`;
 
 /**
- * Gemini's responseJsonSchema takes a JSON Schema subset. Union types written as
- * `type: ["number", "null"]` are not in that subset; `anyOf` is, so nullables go
- * through this helper.
+ * Optional fields are plain types left out of `required`, rather than
+ * `anyOf: [{type}, {type: 'null'}]` unions. The model expresses "not on the
+ * receipt" by omitting the key, and the app already treats missing as unknown.
+ * Unions cost real decoding time — twenty of them was a measurable part of why
+ * a scan took longer than the function was allowed to live.
  */
-const nullable = (type: string) => ({ anyOf: [{ type }, { type: 'null' }] });
+const str = { type: 'string' };
+const num = { type: 'number' };
 
 const RECEIPT_SCHEMA = {
   type: 'object',
   properties: {
     merchant: { type: 'string', description: 'Trading name as printed.' },
-    tin: nullable('string'),
-    fs_no: nullable('string'),
-    ref: nullable('string'),
-    operator: nullable('string'),
-    printed_at: nullable('string'),
-    currency_code: nullable('string'),
+    tin: str,
+    fs_no: str,
+    ref: str,
+    operator: str,
+    printed_at: str,
+    currency_code: str,
     items: {
       type: 'array',
       items: {
@@ -77,31 +83,29 @@ const RECEIPT_SCHEMA = {
         properties: {
           description: { type: 'string' },
           qty: { type: 'number' },
-          unit_price: nullable('number'),
-          amount: nullable('number'),
+          unit_price: num,
+          amount: { type: 'number', description: 'Line total as printed.' },
           taxable: { type: 'boolean' },
-          tax_marker: nullable('string'),
+          tax_marker: str,
         },
-        required: ['description', 'qty', 'unit_price', 'amount', 'taxable', 'tax_marker'],
+        // A line without a description, a quantity, an amount or a taxable flag
+        // is not usable, so those stay mandatory.
+        required: ['description', 'qty', 'amount', 'taxable'],
       },
     },
-    subtotal: nullable('number'),
-    service_charge: nullable('number'),
-    service_charge_rate: nullable('number'),
-    taxable_base: nullable('number'),
-    tax_rate: nullable('number'),
-    tax_amount: nullable('number'),
-    non_taxable_total: nullable('number'),
-    total: nullable('number'),
-    cash: nullable('number'),
-    change: nullable('number'),
-    notes: nullable('string'),
+    subtotal: num,
+    service_charge: num,
+    service_charge_rate: num,
+    taxable_base: num,
+    tax_rate: num,
+    tax_amount: num,
+    non_taxable_total: num,
+    total: num,
+    cash: num,
+    change: num,
+    notes: str,
   },
-  required: [
-    'merchant', 'items', 'subtotal', 'service_charge', 'service_charge_rate',
-    'taxable_base', 'tax_rate', 'tax_amount', 'non_taxable_total', 'total',
-    'cash', 'change', 'notes',
-  ],
+  required: ['merchant', 'items'],
 };
 
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
@@ -174,6 +178,10 @@ Deno.serve(async (req: Request) => {
       responseJsonSchema: RECEIPT_SCHEMA,
       // Deterministic transcription: we want the same digits every time, not variety.
       temperature: 0,
+      // Reading digits off paper is not a reasoning problem. Left at its
+      // default the model thought for longer than the whole request was
+      // allowed to take.
+      thinkingConfig: { thinkingLevel: 'LOW' },
     },
   };
 
@@ -191,7 +199,7 @@ Deno.serve(async (req: Request) => {
     });
   } catch (error) {
     const timedOut = error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError');
-    console.error(JSON.stringify({ at: 'model.fetch_failed', timedOut, message: String(error).slice(0, 200) }));
+    console.error(JSON.stringify({ at: 'model.fetch_failed', timedOut, ms: Date.now() - startedAt, message: String(error).slice(0, 200) }));
     return json(
       {
         error: timedOut
