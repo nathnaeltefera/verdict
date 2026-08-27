@@ -2,11 +2,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
-import { LOMYAD, MESSANTA_COFFEE } from '../src/core/fixtures';
 import { isConfigured, readReceipt } from '../src/data/ocr';
 import { prepareImage } from '../src/data/prepareImage';
 import { useBills } from '../src/data/store';
-import { AppButton, Card, SectionLabel } from '../src/ui/components/base';
+import { AppButton, Card } from '../src/ui/components/base';
 import { Screen } from '../src/ui/components/Screen';
 import { Stagger } from '../src/ui/components/Stagger';
 import { palette, radius, space, type as typo } from '../src/ui/theme';
@@ -115,12 +114,6 @@ export default function Scan() {
     if (!result.canceled && result.assets[0]) await handle(result.assets[0]);
   }, [handle]);
 
-  const openSample = (which: 'messanta' | 'lomyad') => {
-    const receipt = which === 'messanta' ? MESSANTA_COFFEE : LOMYAD;
-    const bill = createBill({ ...receipt, id: `${receipt.id}-${Date.now()}` });
-    router.replace(`/bill/${bill.id}/review`);
-  };
-
   return (
     <Screen>
       <Stagger>
@@ -166,7 +159,7 @@ export default function Scan() {
             <Text style={[typo.body, { color: palette.text, marginTop: 6, lineHeight: 21 }]}>
               Photographing a receipt needs the <Text style={typo.mono}>parse-receipt</Text> function deployed, with your
               Supabase URL and anon key in app.json under <Text style={typo.mono}>expo.extra</Text>. Everything else —
-              assigning, splitting, settling — works right now on the sample receipts below.
+              assigning, splitting, settling — already works on any bill you have.
             </Text>
           </Card>
         ) : null}
@@ -186,21 +179,6 @@ export default function Scan() {
           />
         </View>
 
-        <SectionLabel style={{ marginTop: space.sm }}>
-          {ready ? 'Or start from a sample' : 'Try it on a sample receipt'}
-        </SectionLabel>
-        <View style={{ gap: space.sm }}>
-          <AppButton
-            label="Messanta Coffee · 5% service"
-            variant={ready ? 'secondary' : 'primary'}
-            onPress={() => openSample('messanta')}
-          />
-          <AppButton
-            label="Lomyad · mixed VAT lines"
-            variant={ready ? 'secondary' : 'primary'}
-            onPress={() => openSample('lomyad')}
-          />
-        </View>
       </Stagger>
     </Screen>
   );
