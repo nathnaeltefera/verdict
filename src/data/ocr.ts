@@ -133,6 +133,13 @@ const REQUEST_TIMEOUT_MS = 120_000;
  */
 const MAX_BASE64_LENGTH = 2_000_000;
 
+/**
+ * Supabase's own status for a free-plan project paused for inactivity. The
+ * function never runs, so there is no { error } body to show, only this code.
+ * `.github/workflows/keepalive.yml` exists so this should not happen.
+ */
+const PROJECT_PAUSED = 540;
+
 export async function readReceipt(base64Image: string, mimeType = 'image/jpeg'): Promise<Receipt> {
   const { supabaseUrl, supabaseAnonKey } = config();
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -170,6 +177,12 @@ export async function readReceipt(base64Image: string, mimeType = 'image/jpeg'):
     );
   } finally {
     clearTimeout(timer);
+  }
+
+  if (response.status === PROJECT_PAUSED) {
+    throw new ReceiptReadError(
+      'The receipt reader is asleep because its Supabase project was paused. Resume it from the Supabase dashboard, then try again.',
+    );
   }
 
   if (!response.ok) {

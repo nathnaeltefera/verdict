@@ -146,6 +146,25 @@ npx expo start --clear
 `webBaseUrl` in `extra` is optional — without it the *Copy a web link* action is
 hidden and everything else still works.
 
+### The project is kept awake
+
+The `verdict` Supabase project is on the free plan, and Supabase pauses free
+projects that go about a week without database traffic. A paused project
+answers every request with status 540, and before this was handled the app
+could only say *"Could not reach the receipt reader"*. Scanning receipts does
+not prevent it, because `parse-receipt` never touches the database.
+
+`.github/workflows/keepalive.yml` calls a one-line database function,
+`public.keepalive()` (see `supabase/migrations/`), every six hours using the
+URL and anon key from `app.json`. It also re-enables itself on each run so
+GitHub's 60-day idle rule cannot switch the schedule off. You can run it by
+hand from the Actions tab.
+
+If the project does get paused anyway, the scan screen now says so, and the
+workflow run fails, which emails you. Resume it from the Supabase dashboard
+(a paused project can be resumed for 90 days). Moving the org to the Pro plan
+removes pausing altogether.
+
 ### Photos are shrunk before they are sent
 
 `src/data/prepareImage.ts` resizes every photo to 1600px on the long edge at
